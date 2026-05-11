@@ -412,34 +412,45 @@ if "app_init" not in st.session_state:
 #  TELA DE LOGIN (APENAS QUANDO HÁ SENHA CONFIGURADA)
 # ════════════════════════════════════════════════════════════
 def _gravar_auth_localstorage_js(value: str):
-    """Grava AUTH_TOKEN no localStorage e recarrega a página com ?auth=<token> na URL."""
+    """Grava AUTH_TOKEN no localStorage do navegador (storage da pagina pai)."""
     components.html(
         f"""
         <script>
-          localStorage.setItem("financer_auth", "{value}");
-          // Vai para a URL com o token; o Python le via st.query_params
-          const url = new URL(window.parent.location.href);
-          url.searchParams.set("auth", "{value}");
-          window.parent.location.replace(url.toString());
+          try {{
+            window.parent.localStorage.setItem("financer_auth", "{value}");
+          }} catch (e) {{
+            localStorage.setItem("financer_auth", "{value}");
+          }}
         </script>
         """,
         height=0,
     )
 
 def _checar_localstorage_js():
-    """Se nao tem ?auth= na URL mas tem token no localStorage, redireciona com o token."""
+    """Le localStorage e injeta o token na URL via history.replaceState (sem reload).
+    O Streamlit re-le query_params naturalmente."""
     components.html(
         """
         <script>
-          const params = new URLSearchParams(window.parent.location.search);
-          if (!params.has("auth")) {
-            const token = localStorage.getItem("financer_auth");
-            if (token) {
-              const url = new URL(window.parent.location.href);
-              url.searchParams.set("auth", token);
-              window.parent.location.replace(url.toString());
+          (function() {
+            let storage;
+            try { storage = window.parent.localStorage; }
+            catch (e) { storage = localStorage; }
+            const token = storage.getItem("financer_auth");
+            if (!token) return;
+            let loc;
+            try { loc = window.parent.location; }
+            catch (e) { loc = window.location; }
+            const url = new URL(loc.href);
+            if (url.searchParams.get("auth") === token) return;
+            url.searchParams.set("auth", token);
+            try {
+              window.parent.history.replaceState({}, "", url.toString());
+              window.parent.location.reload();
+            } catch (e) {
+              window.location.href = url.toString();
             }
-          }
+          })();
         </script>
         """,
         height=0,
@@ -454,6 +465,13 @@ if APP_PASSWORD:
     auth_qp = st.query_params.get("auth", "")
     if auth_qp == AUTH_TOKEN:
         st.session_state.autenticado = True
+
+    # ═══ DEBUG TEMPORÁRIO ═══
+    with st.expander("🔧 Debug auth", expanded=False):
+        st.write(f"**`?auth=` da URL:** `{(auth_qp[:20] + '...') if auth_qp else '(vazio)'}`")
+        st.write(f"**Token esperado:** `{AUTH_TOKEN[:20]}...`")
+        st.write(f"**Bate?** `{auth_qp == AUTH_TOKEN}`")
+        st.write(f"**Autenticado na sessao:** `{st.session_state.get('autenticado', False)}`")
 
     # Se ainda nao esta autenticado, tenta puxar do localStorage via JS.
     # O JS recarrega a pagina com ?auth=<token> e o Python autentica na proxima execucao.
@@ -488,10 +506,11 @@ if APP_PASSWORD:
                 pwd = st.text_input("Senha", type="password", label_visibility="collapsed", placeholder="Senha")
                 if st.form_submit_button("Entrar", type="primary", use_container_width=True):
                     if pwd == APP_PASSWORD:
-                        # Grava token no localStorage do navegador. JS recarrega
-                        # a pagina com ?auth=<token>, que o Python valida na proxima execucao.
+                        # Grava token no localStorage (vale pra futuras sessoes/abas/F5).
                         _gravar_auth_localstorage_js(AUTH_TOKEN)
-                        st.stop()  # JS vai recarregar; nada mais a fazer
+                        # Autentica a sessao ATUAL via session_state e segue.
+                        st.session_state.autenticado = True
+                        st.rerun()
                     else:
                         st.error("Senha incorreta.")
         st.stop()
