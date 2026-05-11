@@ -434,6 +434,17 @@ if APP_PASSWORD:
     if cookie_val == AUTH_TOKEN:
         st.session_state.autenticado = True
 
+    # ═══ DEBUG TEMPORÁRIO — remover depois ═══
+    with st.expander("🔧 Debug de cookies (temporário)", expanded=True):
+        st.write("**Todos os cookies que o app está vendo:**")
+        st.json(dict(st.context.cookies))
+        st.write("**Valor lido de `financer_auth`:**")
+        st.code(repr(cookie_val))
+        st.write("**Valor esperado (AUTH_TOKEN dos seus secrets):**")
+        st.code(repr(AUTH_TOKEN))
+        st.write("**Comparação:**")
+        st.write(f"São iguais? `{cookie_val == AUTH_TOKEN}`")
+
     if not st.session_state.get("autenticado"):
         st.markdown("""
         <style>
