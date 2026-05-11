@@ -411,39 +411,54 @@ if "app_init" not in st.session_state:
 # ════════════════════════════════════════════════════════════
 #  TELA DE LOGIN (APENAS QUANDO HÁ SENHA CONFIGURADA)
 # ════════════════════════════════════════════════════════════
-def _set_auth_cookie_js(value: str, dias: int = 30):
-    """Injeta um <script> que grava o cookie no navegador.
-    Usa SameSite=Lax e path=/ pra funcionar em todas as rotas."""
-    expira_seg = dias * 24 * 60 * 60
+def _gravar_auth_localstorage_js(value: str):
+    """Grava AUTH_TOKEN no localStorage e recarrega a página com ?auth=<token> na URL."""
     components.html(
         f"""
         <script>
-          document.cookie = "financer_auth={value}; path=/; max-age={expira_seg}; SameSite=Lax";
+          localStorage.setItem("financer_auth", "{value}");
+          // Vai para a URL com o token; o Python le via st.query_params
+          const url = new URL(window.parent.location.href);
+          url.searchParams.set("auth", "{value}");
+          window.parent.location.replace(url.toString());
+        </script>
+        """,
+        height=0,
+    )
+
+def _checar_localstorage_js():
+    """Se nao tem ?auth= na URL mas tem token no localStorage, redireciona com o token."""
+    components.html(
+        """
+        <script>
+          const params = new URLSearchParams(window.parent.location.search);
+          if (!params.has("auth")) {
+            const token = localStorage.getItem("financer_auth");
+            if (token) {
+              const url = new URL(window.parent.location.href);
+              url.searchParams.set("auth", token);
+              window.parent.location.replace(url.toString());
+            }
+          }
         </script>
         """,
         height=0,
     )
 
 if APP_PASSWORD:
-    # Hash da senha + um "tempero" fixo. O cookie armazena esse hash.
-    # Quem souber a senha consegue gerar o hash, quem não souber não consegue forjar.
+    # Hash da senha + um "tempero" fixo. Se alguem souber a senha, gera o hash;
+    # sem saber a senha, nao consegue forjar.
     AUTH_TOKEN = hashlib.sha256(f"financer-auth::{APP_PASSWORD}".encode()).hexdigest()
 
-    # Lê cookie via API nativa do Streamlit (sem componente externo, sem timing issues).
-    cookie_val = st.context.cookies.get("financer_auth")
-    if cookie_val == AUTH_TOKEN:
+    # Le token do query param (que o JS coloca a partir do localStorage).
+    auth_qp = st.query_params.get("auth", "")
+    if auth_qp == AUTH_TOKEN:
         st.session_state.autenticado = True
 
-    # ═══ DEBUG TEMPORÁRIO — remover depois ═══
-    with st.expander("🔧 Debug de cookies (temporário)", expanded=True):
-        st.write("**Todos os cookies que o app está vendo:**")
-        st.json(dict(st.context.cookies))
-        st.write("**Valor lido de `financer_auth`:**")
-        st.code(repr(cookie_val))
-        st.write("**Valor esperado (AUTH_TOKEN dos seus secrets):**")
-        st.code(repr(AUTH_TOKEN))
-        st.write("**Comparação:**")
-        st.write(f"São iguais? `{cookie_val == AUTH_TOKEN}`")
+    # Se ainda nao esta autenticado, tenta puxar do localStorage via JS.
+    # O JS recarrega a pagina com ?auth=<token> e o Python autentica na proxima execucao.
+    if not st.session_state.get("autenticado"):
+        _checar_localstorage_js()
 
     if not st.session_state.get("autenticado"):
         st.markdown("""
@@ -473,10 +488,10 @@ if APP_PASSWORD:
                 pwd = st.text_input("Senha", type="password", label_visibility="collapsed", placeholder="Senha")
                 if st.form_submit_button("Entrar", type="primary", use_container_width=True):
                     if pwd == APP_PASSWORD:
-                        # Grava cookie no navegador via JS. Dura 30 dias.
-                        _set_auth_cookie_js(AUTH_TOKEN, dias=30)
-                        st.session_state.autenticado = True
-                        st.rerun()
+                        # Grava token no localStorage do navegador. JS recarrega
+                        # a pagina com ?auth=<token>, que o Python valida na proxima execucao.
+                        _gravar_auth_localstorage_js(AUTH_TOKEN)
+                        st.stop()  # JS vai recarregar; nada mais a fazer
                     else:
                         st.error("Senha incorreta.")
         st.stop()
