@@ -875,7 +875,7 @@ elif pag == "lancamentos":
                 st.session_state.salario_mes[m] = c1.number_input("Salário (R$)", min_value=0.0, value=st.session_state.salario_mes.get(m,0.0), step=100.0, key="sal")
                 st.session_state.vr_mes[m]       = c2.number_input("Vale Alimentação (R$)", min_value=0.0, value=st.session_state.vr_mes.get(m,0.0), step=50.0, key="vr")
                 if st.button("Salvar ganhos fixos", use_container_width=True):
-                    salvar(); st.toast("Salvo!", icon="✓")
+                    salvar(); st.toast("Salvo!", icon="✅")
 
             with st.expander("➕  Adicionar receita extra"):
                 with st.form("f_rec", clear_on_submit=True):
