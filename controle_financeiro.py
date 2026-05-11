@@ -1703,4 +1703,3 @@ with col_r:
                 um feedback personalizado sobre suas finanças.
             </p>
         </div>""", unsafe_allow_html=True)
-```
