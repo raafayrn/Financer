@@ -3,7 +3,8 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
-import json, base64, os, anthropic, requests
+import json, base64, os, anthropic, requests, hashlib
+from streamlit_cookies_controller import CookieController
 
 # ════════════════════════════════════════════════════════════
 #  CONFIGURAÇÃO DE STORAGE (GIST vs LOCAL)
@@ -410,39 +411,53 @@ if "app_init" not in st.session_state:
 # ════════════════════════════════════════════════════════════
 #  TELA DE LOGIN (APENAS QUANDO HÁ SENHA CONFIGURADA)
 # ════════════════════════════════════════════════════════════
-if APP_PASSWORD and not st.session_state.get("autenticado"):
-    st.markdown("""
-    <style>
-    [data-testid="stSidebar"] { display:none !important; }
-    [data-testid="stMainBlockContainer"] { padding: 0 !important; }
-    </style>
-    """, unsafe_allow_html=True)
+if APP_PASSWORD:
+    # Hash da senha + um "tempero" fixo. O cookie armazena esse hash.
+    # Quem souber a senha consegue gerar o hash, quem não souber não consegue forjar.
+    AUTH_TOKEN = hashlib.sha256(f"financer-auth::{APP_PASSWORD}".encode()).hexdigest()
 
-    _, col, _ = st.columns([1, 1.2, 1])
-    with col:
-        st.markdown("<div style='height:80px'></div>", unsafe_allow_html=True)
+    cookie_controller = CookieController()
+
+    # Verifica cookie a cada execução. Se válido, marca autenticado automaticamente.
+    cookie_val = cookie_controller.get("financer_auth")
+    if cookie_val == AUTH_TOKEN:
+        st.session_state.autenticado = True
+
+    if not st.session_state.get("autenticado"):
         st.markdown("""
-        <div style='text-align:center;margin-bottom:36px'>
-            <div style='font-size:2.8rem;margin-bottom:12px;filter:drop-shadow(0 0 24px rgba(59,130,246,.5))'>🔒</div>
-            <h1 style='font-family:"Sora",sans-serif;font-size:2.2rem;font-weight:800;margin:0;
-                       background:linear-gradient(135deg,#f1f5f9 0%,#3b82f6 50%,#6366f1 100%);
-                       -webkit-background-clip:text;-webkit-text-fill-color:transparent;
-                       letter-spacing:-.03em'>Financer</h1>
-            <p style='color:#334155;font-size:.85rem;margin:10px 0 0'>
-                Digite a senha para acessar
-            </p>
-        </div>
+        <style>
+        [data-testid="stSidebar"] { display:none !important; }
+        [data-testid="stMainBlockContainer"] { padding: 0 !important; }
+        </style>
         """, unsafe_allow_html=True)
 
-        with st.form("login_form"):
-            pwd = st.text_input("Senha", type="password", label_visibility="collapsed", placeholder="Senha")
-            if st.form_submit_button("Entrar", type="primary", use_container_width=True):
-                if pwd == APP_PASSWORD:
-                    st.session_state.autenticado = True
-                    st.rerun()
-                else:
-                    st.error("Senha incorreta.")
-    st.stop()
+        _, col, _ = st.columns([1, 1.2, 1])
+        with col:
+            st.markdown("<div style='height:80px'></div>", unsafe_allow_html=True)
+            st.markdown("""
+            <div style='text-align:center;margin-bottom:36px'>
+                <div style='font-size:2.8rem;margin-bottom:12px;filter:drop-shadow(0 0 24px rgba(59,130,246,.5))'>🔒</div>
+                <h1 style='font-family:"Sora",sans-serif;font-size:2.2rem;font-weight:800;margin:0;
+                           background:linear-gradient(135deg,#f1f5f9 0%,#3b82f6 50%,#6366f1 100%);
+                           -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+                           letter-spacing:-.03em'>Financer</h1>
+                <p style='color:#334155;font-size:.85rem;margin:10px 0 0'>
+                    Digite a senha para acessar
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            with st.form("login_form"):
+                pwd = st.text_input("Senha", type="password", label_visibility="collapsed", placeholder="Senha")
+                if st.form_submit_button("Entrar", type="primary", use_container_width=True):
+                    if pwd == APP_PASSWORD:
+                        # Grava cookie que dura 30 dias (60*60*24*30 = 2592000 segundos)
+                        cookie_controller.set("financer_auth", AUTH_TOKEN, max_age=60*60*24*30)
+                        st.session_state.autenticado = True
+                        st.rerun()
+                    else:
+                        st.error("Senha incorreta.")
+        st.stop()
 
 # Restaura arquivo_ativo do query param se perdeu no rerun de navegação
 if not st.session_state.arquivo_ativo:
