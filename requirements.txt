@@ -3,3 +3,4 @@ pandas
 plotly
 anthropic
 requests
+streamlit-cookies-controller
