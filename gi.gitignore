@@ -1,0 +1,13 @@
+# Arquivos de dados locais (NÃO subir!)
+*.json
+
+# Cache Python
+__pycache__/
+*.pyc
+
+# Secrets do Streamlit (NUNCA subir!)
+.streamlit/secrets.toml
+
+# Editores
+.vscode/
+.idea/
