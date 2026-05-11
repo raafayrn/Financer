@@ -734,6 +734,30 @@ button[data-testid="stBaseButton-headerNoPadding"] {
     margin: 6px 0;
 }
 
+/* ── Overlay de loading na troca de pagina ── */
+#nav-loader {
+    position: fixed;
+    inset: 0;
+    background: rgba(8, 12, 20, 0.75);
+    backdrop-filter: blur(2px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 999999;
+    pointer-events: none;
+}
+#nav-loader.show { display: flex; }
+#nav-loader .spinner {
+    width: 36px; height: 36px;
+    border: 3px solid rgba(99,102,241,0.2);
+    border-top-color: #6366f1;
+    border-radius: 50%;
+    animation: nav-spin 0.7s linear infinite;
+}
+@keyframes nav-spin {
+    to { transform: rotate(360deg); }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -750,12 +774,25 @@ _arq_nome = os.path.basename(st.session_state.arquivo_ativo) if st.session_state
 nav_html = '<div class="icon-rail"><div class="rail-logo">💎</div>'
 for pid, icon, label in NAV:
     active_cls = "active" if pag == pid else ""
-    # Adicionado target="_self" abaixo
-    nav_html += f'<a class="rail-btn {active_cls}" href="?p={pid}&arq={_arq_nome}" target="_self"><span style="font-size:1.2rem">{icon}</span><span class="tip">{label}</span></a>'
+    nav_html += f'<a class="rail-btn {active_cls}" data-nav href="?p={pid}&arq={_arq_nome}" target="_self"><span style="font-size:1.2rem">{icon}</span><span class="tip">{label}</span></a>'
 nav_html += '<div style="flex:1"></div>'
-# Adicionado target="_self" abaixo
-nav_html += f'<a class="rail-btn" href="?arq=" target="_self" style="font-size:1rem;opacity:.5;" title="Trocar arquivo">↩<span class="tip">Trocar arquivo</span></a>'
+nav_html += f'<a class="rail-btn" data-nav href="?arq=" target="_self" style="font-size:1rem;opacity:.5;" title="Trocar arquivo">↩<span class="tip">Trocar arquivo</span></a>'
 nav_html += '</div>'
+
+# Overlay de loading + JS que ativa ao clicar em qualquer link de navegacao
+nav_html += """
+<div id="nav-loader"><div class="spinner"></div></div>
+<script>
+(function() {
+  const overlay = document.getElementById("nav-loader");
+  document.querySelectorAll("a.rail-btn[data-nav]").forEach(a => {
+    a.addEventListener("click", () => {
+      if (overlay) overlay.classList.add("show");
+    });
+  });
+})();
+</script>
+"""
 st.markdown(nav_html, unsafe_allow_html=True)
 
 # ── Handle "trocar arquivo" ──
@@ -764,39 +801,46 @@ if st.query_params.get("arq") == "":
     st.query_params.clear()
     st.rerun()
 
-# ── Header do conteúdo: mês + ações ──
+# ── Dados pra exportação (usados pelo cabecalho_pagina) ──
 dados_exp = {k: st.session_state[k] for k in
              ["salario_mes","vr_mes","receitas_extras","gastos_fixos",
               "gastos","reservaFaculdade","investimentos","dividas"]}
 
-hc1, hc2, hc3 = st.columns([4, 1, 1])
-with hc2:
-    st.session_state.mesAtivo = st.selectbox(
-        "Mês", range(12),
-        format_func=lambda x: MESES_E[x],
-        index=st.session_state.get("mesAtivo", MES_ATUAL),
-        label_visibility="collapsed", key="mes_sel"
-    )
-with hc3:
-    st.download_button("⬇ Exportar",
-        data=json.dumps(dados_exp, indent=2, ensure_ascii=False),
-        file_name=f"financer_{datetime.now().strftime('%Y%m%d')}.json",
-        mime="application/json", use_container_width=True)
+def cabecalho_pagina(titulo: str, subtitulo: str = ""):
+    """Renderiza título da página + seletor de mês + botão Exportar na mesma linha."""
+    hc1, hc2, hc3 = st.columns([3.5, 1, 1], vertical_alignment="center")
+    with hc1:
+        sub = f"<p style='margin:0;color:#475569;font-size:.85rem'>{subtitulo}</p>" if subtitulo else ""
+        st.markdown(f"""
+        <div>
+            <h2 style='margin:0 0 4px;font-size:1.6rem;font-weight:800;letter-spacing:-.02em'>{titulo}</h2>
+            {sub}
+        </div>""", unsafe_allow_html=True)
+    with hc2:
+        st.session_state.mesAtivo = st.selectbox(
+            "Mês", range(12),
+            format_func=lambda x: MESES_E[x],
+            index=st.session_state.get("mesAtivo", MES_ATUAL),
+            label_visibility="collapsed", key="mes_sel"
+        )
+    with hc3:
+        st.download_button("⬇ Exportar",
+            data=json.dumps(dados_exp, indent=2, ensure_ascii=False),
+            file_name=f"financer_{datetime.now().strftime('%Y%m%d')}.json",
+            mime="application/json", use_container_width=True)
+    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
 
 # ── Sidebar oculta (não usada na navegação) ──
 with st.sidebar:
     st.caption("Financer")
 
 # ════════════════════════════════════════════════════════════
-#  ATALHOS
-# ════════════════════════════════════════════════════════════
-m   = st.session_state.mesAtivo
-# pag já definido acima via query_params
-
-# ════════════════════════════════════════════════════════════
 #  PÁGINA: VISÃO GERAL
 # ════════════════════════════════════════════════════════════
 if pag == "visao_geral":
+    cabecalho_pagina("Visão Geral", f"{MESES_E[st.session_state.mesAtivo]} · {ANO_ATUAL}")
+    m = st.session_state.mesAtivo  # re-le após cabeçalho (que tem o selectbox)
+
     receita  = rec_total(m)
     gasto    = gas_total(m)
     saldo    = receita - gasto
@@ -804,13 +848,6 @@ if pag == "visao_geral":
     div_rest = sum(d['total']-(d['total']/d['parcelas'])*parc_auto(d) for d in st.session_state.dividas)
     patrim   = reservas + saldo - div_rest
     comprm   = (gasto/receita*100) if receita > 0 else 0
-
-    # Título
-    st.markdown(f"""
-    <div style='margin-bottom:28px'>
-        <h2 style='margin:0 0 4px;font-size:1.6rem;font-weight:800;letter-spacing:-.02em'>Visão Geral</h2>
-        <p style='margin:0;color:#475569;font-size:.85rem'>{MESES_E[m]} · {ANO_ATUAL}</p>
-    </div>""", unsafe_allow_html=True)
 
     # Banner de status
     if comprm == 0:
@@ -922,10 +959,8 @@ if pag == "visao_geral":
 #  PÁGINA: LANÇAMENTOS
 # ════════════════════════════════════════════════════════════
 elif pag == "lancamentos":
-    st.markdown(f"""<div style='margin-bottom:28px'>
-        <h2 style='margin:0 0 4px;font-size:1.6rem;font-weight:800;letter-spacing:-.02em'>Lançamentos</h2>
-        <p style='margin:0;color:#475569;font-size:.85rem'>{MESES_E[m]} · {ANO_ATUAL}</p>
-    </div>""", unsafe_allow_html=True)
+    cabecalho_pagina("Lançamentos", f"{MESES_E[st.session_state.mesAtivo]} · {ANO_ATUAL}")
+    m = st.session_state.mesAtivo
 
     col_esq, col_dir = st.columns([1, 1], gap="large")
 
@@ -1104,10 +1139,8 @@ elif pag == "lancamentos":
 #  PÁGINA: RESERVAS
 # ════════════════════════════════════════════════════════════
 elif pag == "reservas":
-    st.markdown(f"""<div style='margin-bottom:28px'>
-        <h2 style='margin:0 0 4px;font-size:1.6rem;font-weight:800;letter-spacing:-.02em'>Reservas & Investimentos</h2>
-        <p style='margin:0;color:#475569;font-size:.85rem'>Total acumulado: {fmt(total_reservas())}</p>
-    </div>""", unsafe_allow_html=True)
+    cabecalho_pagina("Reservas & Investimentos", f"Total acumulado: {fmt(total_reservas())}")
+    m = st.session_state.mesAtivo
 
     k1,k2,k3 = st.columns(3)
     k1.metric("Total Guardado", fmt(total_reservas()))
@@ -1222,10 +1255,8 @@ elif pag == "reservas":
 #  PÁGINA: DÍVIDAS
 # ════════════════════════════════════════════════════════════
 elif pag == "dividas":
-    st.markdown(f"""<div style='margin-bottom:28px'>
-        <h2 style='margin:0 0 4px;font-size:1.6rem;font-weight:800;letter-spacing:-.02em'>Dívidas & Parcelamentos</h2>
-        <p style='margin:0;color:#475569;font-size:.85rem'>Acompanhe o progresso das suas dívidas</p>
-    </div>""", unsafe_allow_html=True)
+    cabecalho_pagina("Dívidas & Parcelamentos", "Acompanhe o progresso das suas dívidas")
+    m = st.session_state.mesAtivo
 
     div_total = sum(d['total'] for d in st.session_state.dividas)
     div_pago  = sum((d['total']/d['parcelas'])*parc_auto(d) for d in st.session_state.dividas)
@@ -1333,10 +1364,8 @@ elif pag == "dividas":
 #  PÁGINA: DASHBOARD
 # ════════════════════════════════════════════════════════════
 elif pag == "dashboard":
-    st.markdown(f"""<div style='margin-bottom:28px'>
-        <h2 style='margin:0 0 4px;font-size:1.6rem;font-weight:800;letter-spacing:-.02em'>Dashboard Analítico</h2>
-        <p style='margin:0;color:#475569;font-size:.85rem'>{MESES_E[m]} · {ANO_ATUAL}</p>
-    </div>""", unsafe_allow_html=True)
+    cabecalho_pagina("Dashboard Analítico", f"{MESES_E[st.session_state.mesAtivo]} · {ANO_ATUAL}")
+    m = st.session_state.mesAtivo
 
     receita  = rec_total(m)
     gasto    = gas_total(m)
@@ -1471,10 +1500,8 @@ elif pag == "dashboard":
 #  PÁGINA: ANÁLISE IA
 # ════════════════════════════════════════════════════════════
 elif pag == "ia":
-    st.markdown(f"""<div style='margin-bottom:28px'>
-        <h2 style='margin:0 0 4px;font-size:1.6rem;font-weight:800;letter-spacing:-.02em'>Análise com IA</h2>
-        <p style='margin:0;color:#475569;font-size:.85rem'>O Claude analisa sua situação financeira e gera recomendações personalizadas</p>
-    </div>""", unsafe_allow_html=True)
+    cabecalho_pagina("Análise com IA", "O Claude analisa sua situação financeira e gera recomendações personalizadas")
+    m = st.session_state.mesAtivo
 
     receita_ia  = rec_total(m)
     gasto_ia    = gas_total(m)
