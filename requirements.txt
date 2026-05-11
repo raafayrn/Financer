@@ -1,6 +1,5 @@
-streamlit>=1.32
+streamlit>=1.38
 pandas
 plotly
 anthropic
 requests
-extra-streamlit-components
