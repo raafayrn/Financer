@@ -466,13 +466,6 @@ if APP_PASSWORD:
     if auth_qp == AUTH_TOKEN:
         st.session_state.autenticado = True
 
-    # ═══ DEBUG TEMPORÁRIO ═══
-    with st.expander("🔧 Debug auth", expanded=False):
-        st.write(f"**`?auth=` da URL:** `{(auth_qp[:20] + '...') if auth_qp else '(vazio)'}`")
-        st.write(f"**Token esperado:** `{AUTH_TOKEN[:20]}...`")
-        st.write(f"**Bate?** `{auth_qp == AUTH_TOKEN}`")
-        st.write(f"**Autenticado na sessao:** `{st.session_state.get('autenticado', False)}`")
-
     # Se ainda nao esta autenticado, tenta puxar do localStorage via JS.
     # O JS recarrega a pagina com ?auth=<token> e o Python autentica na proxima execucao.
     if not st.session_state.get("autenticado"):
