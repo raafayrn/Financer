@@ -416,10 +416,8 @@ if APP_PASSWORD:
     # Quem souber a senha consegue gerar o hash, quem não souber não consegue forjar.
     AUTH_TOKEN = hashlib.sha256(f"financer-auth::{APP_PASSWORD}".encode()).hexdigest()
 
-    @st.cache_resource
-    def _get_cookie_manager():
-        return stx.CookieManager()
-    cookie_controller = _get_cookie_manager()
+    # CookieManager com key estavel garante que e o mesmo objeto entre reruns.
+    cookie_controller = stx.CookieManager(key="financer_cookies")
 
     # Na primeira execução o componente JS ainda não retornou os cookies.
     # Damos um respiro pra ele carregar antes de decidir mostrar tela de login.
