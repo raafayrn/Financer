@@ -2,9 +2,9 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime
-import json, base64, os, anthropic, requests, hashlib
-from streamlit_cookies_controller import CookieController
+from datetime import datetime, timedelta
+import json, base64, os, anthropic, requests, hashlib, time
+import extra_streamlit_components as stx
 
 # ════════════════════════════════════════════════════════════
 #  CONFIGURAÇÃO DE STORAGE (GIST vs LOCAL)
@@ -416,7 +416,18 @@ if APP_PASSWORD:
     # Quem souber a senha consegue gerar o hash, quem não souber não consegue forjar.
     AUTH_TOKEN = hashlib.sha256(f"financer-auth::{APP_PASSWORD}".encode()).hexdigest()
 
-    cookie_controller = CookieController()
+    @st.cache_resource
+    def _get_cookie_manager():
+        return stx.CookieManager()
+    cookie_controller = _get_cookie_manager()
+
+    # Na primeira execução o componente JS ainda não retornou os cookies.
+    # Damos um respiro pra ele carregar antes de decidir mostrar tela de login.
+    if "cookies_carregados" not in st.session_state:
+        st.session_state.cookies_carregados = False
+    if not st.session_state.cookies_carregados:
+        time.sleep(0.3)
+        st.session_state.cookies_carregados = True
 
     # Verifica cookie a cada execução. Se válido, marca autenticado automaticamente.
     cookie_val = cookie_controller.get("financer_auth")
@@ -451,8 +462,9 @@ if APP_PASSWORD:
                 pwd = st.text_input("Senha", type="password", label_visibility="collapsed", placeholder="Senha")
                 if st.form_submit_button("Entrar", type="primary", use_container_width=True):
                     if pwd == APP_PASSWORD:
-                        # Grava cookie que dura 30 dias (60*60*24*30 = 2592000 segundos)
-                        cookie_controller.set("financer_auth", AUTH_TOKEN, max_age=60*60*24*30)
+                        # Grava cookie que dura 30 dias
+                        expira = datetime.now() + timedelta(days=30)
+                        cookie_controller.set("financer_auth", AUTH_TOKEN, expires_at=expira)
                         st.session_state.autenticado = True
                         st.rerun()
                     else:
