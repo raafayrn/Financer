@@ -3,8 +3,8 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-import json, base64, os, anthropic, requests, hashlib, time
-import extra_streamlit_components as stx
+import json, base64, os, anthropic, requests, hashlib
+import streamlit.components.v1 as components
 
 # ════════════════════════════════════════════════════════════
 #  CONFIGURAÇÃO DE STORAGE (GIST vs LOCAL)
@@ -411,24 +411,26 @@ if "app_init" not in st.session_state:
 # ════════════════════════════════════════════════════════════
 #  TELA DE LOGIN (APENAS QUANDO HÁ SENHA CONFIGURADA)
 # ════════════════════════════════════════════════════════════
+def _set_auth_cookie_js(value: str, dias: int = 30):
+    """Injeta um <script> que grava o cookie no navegador.
+    Usa SameSite=Lax e path=/ pra funcionar em todas as rotas."""
+    expira_seg = dias * 24 * 60 * 60
+    components.html(
+        f"""
+        <script>
+          document.cookie = "financer_auth={value}; path=/; max-age={expira_seg}; SameSite=Lax";
+        </script>
+        """,
+        height=0,
+    )
+
 if APP_PASSWORD:
     # Hash da senha + um "tempero" fixo. O cookie armazena esse hash.
     # Quem souber a senha consegue gerar o hash, quem não souber não consegue forjar.
     AUTH_TOKEN = hashlib.sha256(f"financer-auth::{APP_PASSWORD}".encode()).hexdigest()
 
-    # CookieManager com key estavel garante que e o mesmo objeto entre reruns.
-    cookie_controller = stx.CookieManager(key="financer_cookies")
-
-    # Na primeira execução o componente JS ainda não retornou os cookies.
-    # Damos um respiro pra ele carregar antes de decidir mostrar tela de login.
-    if "cookies_carregados" not in st.session_state:
-        st.session_state.cookies_carregados = False
-    if not st.session_state.cookies_carregados:
-        time.sleep(0.3)
-        st.session_state.cookies_carregados = True
-
-    # Verifica cookie a cada execução. Se válido, marca autenticado automaticamente.
-    cookie_val = cookie_controller.get("financer_auth")
+    # Lê cookie via API nativa do Streamlit (sem componente externo, sem timing issues).
+    cookie_val = st.context.cookies.get("financer_auth")
     if cookie_val == AUTH_TOKEN:
         st.session_state.autenticado = True
 
@@ -460,9 +462,8 @@ if APP_PASSWORD:
                 pwd = st.text_input("Senha", type="password", label_visibility="collapsed", placeholder="Senha")
                 if st.form_submit_button("Entrar", type="primary", use_container_width=True):
                     if pwd == APP_PASSWORD:
-                        # Grava cookie que dura 30 dias
-                        expira = datetime.now() + timedelta(days=30)
-                        cookie_controller.set("financer_auth", AUTH_TOKEN, expires_at=expira)
+                        # Grava cookie no navegador via JS. Dura 30 dias.
+                        _set_auth_cookie_js(AUTH_TOKEN, dias=30)
                         st.session_state.autenticado = True
                         st.rerun()
                     else:
