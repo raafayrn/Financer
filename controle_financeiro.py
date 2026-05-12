@@ -173,7 +173,7 @@ def parc_auto(d):
 #  PAGE CONFIG
 # ════════════════════════════════════════════════════════════
 st.set_page_config(page_title="Financer", layout="wide", page_icon="💎",
-                   initial_sidebar_state="collapsed")
+                   initial_sidebar_state="expanded")
 
 # ════════════════════════════════════════════════════════════
 #  CSS GLOBAL
@@ -192,47 +192,13 @@ html, body { background: #080c14 !important; }
 [data-testid="stHeader"] { background: #080c14 !important; }
 [data-testid="stToolbar"] { display: none !important; }
 
-/* ── Sidebar toggle button (collapsed state) ── */
-[data-testid="stSidebarCollapsedControl"] {
-    background: #0c1120 !important;
-    border: 1px solid rgba(255,255,255,0.1) !important;
-    border-radius: 0 8px 8px 0 !important;
-    width: 2rem !important;
-    height: 2.5rem !important;
-    top: 50% !important;
-    position: fixed !important;
-    left: 0 !important;
-    z-index: 9999 !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    cursor: pointer !important;
-}
-[data-testid="stSidebarCollapsedControl"]:hover {
-    background: rgba(59,130,246,0.15) !important;
-    border-color: rgba(59,130,246,0.4) !important;
-}
-[data-testid="stSidebarCollapsedControl"] svg {
-    color: #64748b !important;
-    width: 16px !important;
-    height: 16px !important;
-}
-/* Hide the expand/collapse button inside open sidebar (use our nav instead) */
-[data-testid="stSidebarCollapseButton"] button {
-    background: transparent !important;
-    border: 1px solid rgba(255,255,255,0.08) !important;
-    border-radius: 6px !important;
-    color: #475569 !important;
-}
 * { box-sizing: border-box; }
 
 /* ── Sidebar ── */
 [data-testid="stSidebar"] {
     background: #0c1120 !important;
     border-right: 1px solid rgba(255,255,255,0.06) !important;
-    width: 240px !important;
 }
-[data-testid="stSidebar"] > div { padding: 0 !important; }
 [data-testid="stSidebarNavItems"] { display:none !important; }
 section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { margin:0; }
 
