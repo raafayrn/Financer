@@ -499,8 +499,10 @@ if APP_PASSWORD:
                 pwd = st.text_input("Senha", type="password", label_visibility="collapsed", placeholder="Senha")
                 if st.form_submit_button("Entrar", type="primary", use_container_width=True):
                     if pwd == APP_PASSWORD:
-                        # Grava token no localStorage (vale pra futuras sessoes/abas/F5).
+                        # Grava token no localStorage (vale pra F5 e novas abas).
                         _gravar_auth_localstorage_js(AUTH_TOKEN)
+                        # Coloca o token na URL pra propagar nos links de navegacao.
+                        st.query_params["auth"] = AUTH_TOKEN
                         # Autentica a sessao ATUAL via session_state e segue.
                         st.session_state.autenticado = True
                         st.rerun()
