@@ -411,81 +411,11 @@ if "app_init" not in st.session_state:
 # ════════════════════════════════════════════════════════════
 #  TELA DE LOGIN (APENAS QUANDO HÁ SENHA CONFIGURADA)
 # ════════════════════════════════════════════════════════════
-# Tempo maximo de inatividade antes de exigir senha novamente (2 horas em ms).
-INATIVIDADE_MS = 2 * 60 * 60 * 1000
-
-def _gravar_auth_storage_js(value: str):
-    """Grava AUTH_TOKEN e timestamp atual no localStorage (storage da pagina pai)."""
-    components.html(
-        f"""
-        <script>
-          (function() {{
-            let storage;
-            try {{ storage = window.parent.localStorage; }}
-            catch (e) {{ storage = localStorage; }}
-            storage.setItem("financer_auth", "{value}");
-            storage.setItem("financer_auth_ts", Date.now().toString());
-          }})();
-        </script>
-        """,
-        height=0,
-    )
-
-def _checar_storage_js():
-    """Le localStorage: se token + timestamp recente, renova ts e injeta ?auth=<token>.
-    Se passou da inatividade, apaga o token (forca login)."""
-    components.html(
-        f"""
-        <script>
-          (function() {{
-            let storage;
-            try {{ storage = window.parent.localStorage; }}
-            catch (e) {{ storage = localStorage; }}
-            const token = storage.getItem("financer_auth");
-            const ts    = parseInt(storage.getItem("financer_auth_ts") || "0", 10);
-            const agora = Date.now();
-            // Se passou da janela de inatividade, expira o token.
-            if (!token || (agora - ts) > {INATIVIDADE_MS}) {{
-              storage.removeItem("financer_auth");
-              storage.removeItem("financer_auth_ts");
-              return;
-            }}
-            // Token valido: renova o timestamp (uso = atividade).
-            storage.setItem("financer_auth_ts", agora.toString());
-            // Injeta token na URL se ainda nao esta.
-            let loc;
-            try {{ loc = window.parent.location; }}
-            catch (e) {{ loc = window.location; }}
-            const url = new URL(loc.href);
-            if (url.searchParams.get("auth") === token) return;
-            url.searchParams.set("auth", token);
-            try {{
-              window.parent.history.replaceState({{}}, "", url.toString());
-              window.parent.location.reload();
-            }} catch (e) {{
-              window.location.href = url.toString();
-            }}
-          }})();
-        </script>
-        """,
-        height=0,
-    )
+# Autenticacao vive apenas em st.session_state (memoria da sessao Streamlit).
+# Persiste enquanto a sessao WebSocket esta ativa = enquanto a aba estiver aberta
+# e a navegacao for interna (st.rerun). F5 ou fechar/abrir = nova sessao = pede senha.
 
 if APP_PASSWORD:
-    # Hash da senha + um "tempero" fixo. Se alguem souber a senha, gera o hash;
-    # sem saber a senha, nao consegue forjar.
-    AUTH_TOKEN = hashlib.sha256(f"financer-auth::{APP_PASSWORD}".encode()).hexdigest()
-
-    # Le token do query param (que o JS coloca a partir do sessionStorage).
-    auth_qp = st.query_params.get("auth", "")
-    if auth_qp == AUTH_TOKEN:
-        st.session_state.autenticado = True
-
-    # Se ainda nao esta autenticado, tenta puxar do sessionStorage via JS.
-    # O JS recarrega a pagina com ?auth=<token> e o Python autentica na proxima execucao.
-    if not st.session_state.get("autenticado"):
-        _checar_storage_js()
-
     if not st.session_state.get("autenticado"):
         st.markdown("""
         <style>
@@ -514,9 +444,6 @@ if APP_PASSWORD:
                 pwd = st.text_input("Senha", type="password", label_visibility="collapsed", placeholder="Senha")
                 if st.form_submit_button("Entrar", type="primary", use_container_width=True):
                     if pwd == APP_PASSWORD:
-                        # Grava token no sessionStorage (vale pra futuras sessoes/abas/F5).
-                        _gravar_auth_storage_js(AUTH_TOKEN)
-                        # Autentica a sessao ATUAL via session_state e segue.
                         st.session_state.autenticado = True
                         st.rerun()
                     else:
@@ -677,76 +604,84 @@ button[data-testid="stBaseButton-headerNoPadding"] {
     padding-top: 24px !important;
     padding-right: 28px !important;
 }
-/* Icon rail */
-.icon-rail {
-    position: fixed;
+/* Icon rail — usa o container Streamlit que contem os botoes de navegacao */
+/* Identificamos o container pelo #rail-anchor que e o primeiro filho */
+[data-testid="stMainBlockContainer"] > div:has(> div > [data-testid="stVerticalBlock"] > div:first-child #rail-anchor),
+div[data-testid="stVerticalBlock"]:has(> div:first-child #rail-anchor) {
+    position: fixed !important;
     left: 0; top: 0; bottom: 0;
-    width: 56px;
+    width: 56px !important;
     background: #0c1120;
     border-right: 1px solid rgba(255,255,255,0.07);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 16px 0;
-    gap: 4px;
+    padding: 16px 0 !important;
     z-index: 9999;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 4px !important;
+}
+
+/* Esconde o anchor invisivel */
+#rail-anchor { display: none; }
+
+/* Logo */
+.rail-logo-wrap {
+    display: flex; justify-content: center;
+    margin-bottom: 16px;
 }
 .rail-logo {
     font-size: 1.3rem;
-    margin-bottom: 16px;
     filter: drop-shadow(0 0 8px rgba(59,130,246,.6));
     cursor: default;
 }
-.rail-btn {
-    width: 40px; height: 40px;
-    border-radius: 10px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 1.1rem;
-    cursor: pointer;
-    border: 1px solid transparent;
-    background: transparent;
-    color: #475569;
-    position: relative;
-    transition: all 0.15s ease;
-    text-decoration: none;
+
+/* Slot vazio (so existe pra marcar qual botao esta ativo via :has) */
+.rail-slot { height: 0; }
+
+/* Estiliza os botoes nativos do Streamlit DENTRO da rail */
+div[data-testid="stVerticalBlock"]:has(> div:first-child #rail-anchor) [data-testid="stButton"] {
+    width: 40px !important;
+    margin: 0 auto !important;
 }
-.rail-btn:hover {
-    background: rgba(59,130,246,0.12);
-    border-color: rgba(59,130,246,0.25);
-    color: #94a3b8;
+div[data-testid="stVerticalBlock"]:has(> div:first-child #rail-anchor) [data-testid="stButton"] button {
+    width: 40px !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    padding: 0 !important;
+    border-radius: 10px !important;
+    background: transparent !important;
+    border: 1px solid transparent !important;
+    color: #475569 !important;
+    font-size: 1.2rem !important;
+    transition: all 0.15s ease !important;
+    box-shadow: none !important;
 }
-.rail-btn.active {
-    background: rgba(59,130,246,0.18);
-    border-color: rgba(59,130,246,0.4);
-    color: #3b82f6;
+div[data-testid="stVerticalBlock"]:has(> div:first-child #rail-anchor) [data-testid="stButton"] button:hover {
+    background: rgba(59,130,246,0.12) !important;
+    border-color: rgba(59,130,246,0.25) !important;
+    color: #94a3b8 !important;
 }
-.rail-btn .tip {
-    position: absolute;
-    left: 50px;
-    background: #1e293b;
-    color: #e2e8f0;
-    font-size: 0.75rem;
-    font-weight: 500;
-    white-space: nowrap;
-    padding: 5px 10px;
-    border-radius: 6px;
-    border: 1px solid rgba(255,255,255,0.1);
-    pointer-events: none;
-    opacity: 0;
-    transform: translateX(-4px);
-    transition: all 0.15s ease;
-    font-family: Inter, sans-serif;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-    z-index: 99999;
+div[data-testid="stVerticalBlock"]:has(> div:first-child #rail-anchor) [data-testid="stButton"] button:focus {
+    outline: none !important;
+    box-shadow: none !important;
 }
-.rail-btn:hover .tip {
-    opacity: 1;
-    transform: translateX(0);
+
+/* Estado ativo: o slot anterior tem classe .active */
+div[data-testid="stVerticalBlock"]:has(> div:first-child #rail-anchor) .rail-slot.active + div [data-testid="stButton"] button,
+div[data-testid="stVerticalBlock"]:has(> div:first-child #rail-anchor) .rail-slot.active + [data-testid="stButton"] button {
+    background: rgba(59,130,246,0.18) !important;
+    border-color: rgba(59,130,246,0.4) !important;
+    color: #3b82f6 !important;
 }
-.rail-divider {
-    width: 28px; height: 1px;
-    background: rgba(255,255,255,0.07);
-    margin: 6px 0;
+
+/* Espacador (empurra o botao de trocar arquivo pro final) */
+.rail-spacer { flex: 1; }
+
+/* Botao de trocar arquivo (ultimo, mais discreto) */
+.rail-slot-bottom + div [data-testid="stButton"] button,
+.rail-slot-bottom + [data-testid="stButton"] button {
+    opacity: 0.5 !important;
+    font-size: 1rem !important;
 }
 
 /* ── Overlay de loading na troca de pagina ── */
@@ -782,39 +717,33 @@ PAGINAS_VALIDAS = [pid for pid, _, _ in NAV]
 pag = _pag_qp if _pag_qp in PAGINAS_VALIDAS else "visao_geral"
 st.session_state.pagina = pag
 
-# ── Nome do arquivo para preservar nos links ──
+# ── Nome do arquivo para preservar nos query params ──
 _arq_nome = os.path.basename(st.session_state.arquivo_ativo) if st.session_state.arquivo_ativo else ""
 
-# ── Renderiza icon rail com links que preservam ?arq= ──
-nav_html = '<div class="icon-rail"><div class="rail-logo">💎</div>'
-for pid, icon, label in NAV:
-    active_cls = "active" if pag == pid else ""
-    nav_html += f'<a class="rail-btn {active_cls}" data-nav href="?p={pid}&arq={_arq_nome}" target="_self"><span style="font-size:1.2rem">{icon}</span><span class="tip">{label}</span></a>'
-nav_html += '<div style="flex:1"></div>'
-nav_html += f'<a class="rail-btn" data-nav href="?arq=" target="_self" style="font-size:1rem;opacity:.5;" title="Trocar arquivo">↩<span class="tip">Trocar arquivo</span></a>'
-nav_html += '</div>'
-
-# Overlay de loading + JS que ativa ao clicar em qualquer link de navegacao
-nav_html += """
-<div id="nav-loader"><div class="spinner"></div></div>
-<script>
-(function() {
-  const overlay = document.getElementById("nav-loader");
-  document.querySelectorAll("a.rail-btn[data-nav]").forEach(a => {
-    a.addEventListener("click", () => {
-      if (overlay) overlay.classList.add("show");
-    });
-  });
-})();
-</script>
-"""
-st.markdown(nav_html, unsafe_allow_html=True)
-
-# ── Handle "trocar arquivo" ──
-if st.query_params.get("arq") == "":
-    st.session_state.arquivo_ativo = None
-    st.query_params.clear()
-    st.rerun()
+# ── Renderiza icon rail usando botoes Streamlit (mantem a sessao viva) ──
+# O CSS abaixo posiciona o container dos botoes fixo na lateral esquerda.
+with st.container():
+    st.markdown('<div id="rail-anchor"></div>', unsafe_allow_html=True)
+    # Logo
+    st.markdown('<div class="rail-logo-wrap"><div class="rail-logo">💎</div></div>', unsafe_allow_html=True)
+    # Botoes de navegacao
+    for pid, icon, label in NAV:
+        is_active = (pag == pid)
+        btn_key = f"nav_{pid}"
+        # Wrapper pra aplicar classe active via CSS
+        st.markdown(f'<div class="rail-slot {"active" if is_active else ""}" data-pid="{pid}"></div>', unsafe_allow_html=True)
+        if st.button(icon, key=btn_key, help=label, use_container_width=True):
+            st.query_params["p"] = pid
+            if _arq_nome:
+                st.query_params["arq"] = _arq_nome
+            st.rerun()
+    # Espacador e botao de trocar arquivo
+    st.markdown('<div class="rail-spacer"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="rail-slot rail-slot-bottom"></div>', unsafe_allow_html=True)
+    if st.button("↩", key="nav_trocar", help="Trocar arquivo", use_container_width=True):
+        st.session_state.arquivo_ativo = None
+        st.query_params.clear()
+        st.rerun()
 
 # ── Dados pra exportação (usados pelo cabecalho_pagina) ──
 dados_exp = {k: st.session_state[k] for k in
