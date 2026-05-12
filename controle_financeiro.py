@@ -194,13 +194,36 @@ html, body { background: #080c14 !important; }
 
 * { box-sizing: border-box; }
 
-/* ── Sidebar ── */
+/* ── Sidebar estreita e fixa (so emojis) ── */
 [data-testid="stSidebar"] {
     background: #0c1120 !important;
     border-right: 1px solid rgba(255,255,255,0.06) !important;
+    width: 72px !important;
+    min-width: 72px !important;
+    max-width: 72px !important;
+}
+[data-testid="stSidebar"] > div:first-child {
+    width: 72px !important;
+    min-width: 72px !important;
+}
+/* Esconde botao de colapsar (sidebar fica sempre aberta) */
+[data-testid="stSidebarCollapseButton"],
+[data-testid="stSidebarCollapsedControl"] {
+    display: none !important;
 }
 [data-testid="stSidebarNavItems"] { display:none !important; }
 section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { margin:0; }
+/* Padding reduzido no conteudo da sidebar */
+section[data-testid="stSidebar"] > div > div:nth-child(2) {
+    padding: 12px 8px !important;
+}
+/* Botoes da sidebar: quadrados, so emoji */
+section[data-testid="stSidebar"] [data-testid="stButton"] button {
+    padding: 8px 0 !important;
+    min-height: 44px !important;
+    font-size: 1.3rem !important;
+    border-radius: 10px !important;
+}
 
 /* Sidebar buttons */
 [data-testid="stSidebar"] button[kind="secondary"] {
@@ -578,25 +601,21 @@ _arq_nome = os.path.basename(st.session_state.arquivo_ativo) if st.session_state
 # ── Sidebar nativa com navegacao via botoes Streamlit (mantem sessao viva) ──
 with st.sidebar:
     st.markdown(
-        '<div style="text-align:center;font-size:1.8rem;margin:8px 0 24px;'
-        'filter:drop-shadow(0 0 12px rgba(59,130,246,.6))">💎 <span style="font-size:1rem;'
-        'font-family:Sora,sans-serif;font-weight:800;vertical-align:middle;'
-        'background:linear-gradient(135deg,#f1f5f9 0%,#3b82f6 50%,#6366f1 100%);'
-        '-webkit-background-clip:text;-webkit-text-fill-color:transparent">Financer</span></div>',
+        '<div style="text-align:center;font-size:1.5rem;margin:4px 0 20px;'
+        'filter:drop-shadow(0 0 12px rgba(59,130,246,.6))">💎</div>',
         unsafe_allow_html=True
     )
     for pid, icon, label in NAV:
         is_active = (pag == pid)
         btn_type = "primary" if is_active else "secondary"
-        if st.button(f"{icon}  {label}", key=f"nav_{pid}", use_container_width=True, type=btn_type):
+        if st.button(icon, key=f"nav_{pid}", help=label, use_container_width=True, type=btn_type):
             st.query_params["p"] = pid
             if _arq_nome:
                 st.query_params["arq"] = _arq_nome
             st.rerun()
     st.markdown("<div style='flex:1;min-height:40px'></div>", unsafe_allow_html=True)
     st.divider()
-    st.caption(f"📁 {_arq_nome}" if _arq_nome else "")
-    if st.button("↩  Trocar arquivo", key="nav_trocar", use_container_width=True):
+    if st.button("↩", key="nav_trocar", help="Trocar arquivo", use_container_width=True):
         st.session_state.arquivo_ativo = None
         st.query_params.clear()
         st.rerun()
