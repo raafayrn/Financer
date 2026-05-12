@@ -411,46 +411,61 @@ if "app_init" not in st.session_state:
 # ════════════════════════════════════════════════════════════
 #  TELA DE LOGIN (APENAS QUANDO HÁ SENHA CONFIGURADA)
 # ════════════════════════════════════════════════════════════
-def _gravar_auth_sessionstorage_js(value: str):
-    """Grava AUTH_TOKEN no sessionStorage do navegador (storage da pagina pai)."""
+# Tempo maximo de inatividade antes de exigir senha novamente (2 horas em ms).
+INATIVIDADE_MS = 2 * 60 * 60 * 1000
+
+def _gravar_auth_storage_js(value: str):
+    """Grava AUTH_TOKEN e timestamp atual no localStorage (storage da pagina pai)."""
     components.html(
         f"""
         <script>
-          try {{
-            window.parent.sessionStorage.setItem("financer_auth", "{value}");
-          }} catch (e) {{
-            sessionStorage.setItem("financer_auth", "{value}");
-          }}
+          (function() {{
+            let storage;
+            try {{ storage = window.parent.localStorage; }}
+            catch (e) {{ storage = localStorage; }}
+            storage.setItem("financer_auth", "{value}");
+            storage.setItem("financer_auth_ts", Date.now().toString());
+          }})();
         </script>
         """,
         height=0,
     )
 
-def _checar_sessionstorage_js():
-    """Le sessionStorage e injeta o token na URL via history.replaceState (sem reload).
-    O Streamlit re-le query_params naturalmente."""
+def _checar_storage_js():
+    """Le localStorage: se token + timestamp recente, renova ts e injeta ?auth=<token>.
+    Se passou da inatividade, apaga o token (forca login)."""
     components.html(
-        """
+        f"""
         <script>
-          (function() {
+          (function() {{
             let storage;
-            try { storage = window.parent.sessionStorage; }
-            catch (e) { storage = sessionStorage; }
+            try {{ storage = window.parent.localStorage; }}
+            catch (e) {{ storage = localStorage; }}
             const token = storage.getItem("financer_auth");
-            if (!token) return;
+            const ts    = parseInt(storage.getItem("financer_auth_ts") || "0", 10);
+            const agora = Date.now();
+            // Se passou da janela de inatividade, expira o token.
+            if (!token || (agora - ts) > {INATIVIDADE_MS}) {{
+              storage.removeItem("financer_auth");
+              storage.removeItem("financer_auth_ts");
+              return;
+            }}
+            // Token valido: renova o timestamp (uso = atividade).
+            storage.setItem("financer_auth_ts", agora.toString());
+            // Injeta token na URL se ainda nao esta.
             let loc;
-            try { loc = window.parent.location; }
-            catch (e) { loc = window.location; }
+            try {{ loc = window.parent.location; }}
+            catch (e) {{ loc = window.location; }}
             const url = new URL(loc.href);
             if (url.searchParams.get("auth") === token) return;
             url.searchParams.set("auth", token);
-            try {
-              window.parent.history.replaceState({}, "", url.toString());
+            try {{
+              window.parent.history.replaceState({{}}, "", url.toString());
               window.parent.location.reload();
-            } catch (e) {
+            }} catch (e) {{
               window.location.href = url.toString();
-            }
-          })();
+            }}
+          }})();
         </script>
         """,
         height=0,
@@ -469,7 +484,7 @@ if APP_PASSWORD:
     # Se ainda nao esta autenticado, tenta puxar do sessionStorage via JS.
     # O JS recarrega a pagina com ?auth=<token> e o Python autentica na proxima execucao.
     if not st.session_state.get("autenticado"):
-        _checar_sessionstorage_js()
+        _checar_storage_js()
 
     if not st.session_state.get("autenticado"):
         st.markdown("""
@@ -500,7 +515,7 @@ if APP_PASSWORD:
                 if st.form_submit_button("Entrar", type="primary", use_container_width=True):
                     if pwd == APP_PASSWORD:
                         # Grava token no sessionStorage (vale pra futuras sessoes/abas/F5).
-                        _gravar_auth_sessionstorage_js(AUTH_TOKEN)
+                        _gravar_auth_storage_js(AUTH_TOKEN)
                         # Autentica a sessao ATUAL via session_state e segue.
                         st.session_state.autenticado = True
                         st.rerun()
