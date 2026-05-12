@@ -2,9 +2,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
-import json, base64, os, anthropic, requests, hashlib
-import streamlit.components.v1 as components
+from datetime import datetime
+import json, base64, os, anthropic, requests
 
 # ════════════════════════════════════════════════════════════
 #  CONFIGURAÇÃO DE STORAGE (GIST vs LOCAL)
@@ -411,9 +410,9 @@ if "app_init" not in st.session_state:
 # ════════════════════════════════════════════════════════════
 #  TELA DE LOGIN (APENAS QUANDO HÁ SENHA CONFIGURADA)
 # ════════════════════════════════════════════════════════════
-# Autenticacao vive apenas em st.session_state (memoria da sessao Streamlit).
-# Persiste enquanto a sessao WebSocket esta ativa = enquanto a aba estiver aberta
-# e a navegacao for interna (st.rerun). F5 ou fechar/abrir = nova sessao = pede senha.
+# Autenticacao vive em st.session_state.autenticado, que persiste enquanto a
+# sessao Streamlit estiver ativa (mesma aba, sem F5). Trocar de pagina por
+# botao Streamlit (st.rerun) mantem a sessao. F5 ou nova aba = nova sessao = pede senha.
 
 if APP_PASSWORD:
     if not st.session_state.get("autenticado"):
@@ -587,127 +586,17 @@ NAV = [
 if "mesAtivo" not in st.session_state:
     st.session_state.mesAtivo = MES_ATUAL
 
-# ── CSS: esconde sidebar nativa, injeta icon rail fixo ──
+# ── CSS: ajustes da sidebar nativa e padding do conteudo ──
 st.markdown("""
 <style>
-[data-testid="stSidebar"],
-[data-testid="stSidebarCollapsedControl"],
-[data-testid="collapsedControl"],
-button[data-testid="stBaseButton-headerNoPadding"] {
-    display: none !important;
-}
 [data-testid="stHeader"] {
     display: none !important;
 }
 [data-testid="stMainBlockContainer"] {
-    padding-left: 72px !important;
     padding-top: 24px !important;
     padding-right: 28px !important;
+    padding-left: 28px !important;
 }
-/* Icon rail — usa o container Streamlit que contem os botoes de navegacao */
-/* Identificamos o container pelo #rail-anchor que e o primeiro filho */
-[data-testid="stMainBlockContainer"] > div:has(> div > [data-testid="stVerticalBlock"] > div:first-child #rail-anchor),
-div[data-testid="stVerticalBlock"]:has(> div:first-child #rail-anchor) {
-    position: fixed !important;
-    left: 0; top: 0; bottom: 0;
-    width: 56px !important;
-    background: #0c1120;
-    border-right: 1px solid rgba(255,255,255,0.07);
-    padding: 16px 0 !important;
-    z-index: 9999;
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: center !important;
-    gap: 4px !important;
-}
-
-/* Esconde o anchor invisivel */
-#rail-anchor { display: none; }
-
-/* Logo */
-.rail-logo-wrap {
-    display: flex; justify-content: center;
-    margin-bottom: 16px;
-}
-.rail-logo {
-    font-size: 1.3rem;
-    filter: drop-shadow(0 0 8px rgba(59,130,246,.6));
-    cursor: default;
-}
-
-/* Slot vazio (so existe pra marcar qual botao esta ativo via :has) */
-.rail-slot { height: 0; }
-
-/* Estiliza os botoes nativos do Streamlit DENTRO da rail */
-div[data-testid="stVerticalBlock"]:has(> div:first-child #rail-anchor) [data-testid="stButton"] {
-    width: 40px !important;
-    margin: 0 auto !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div:first-child #rail-anchor) [data-testid="stButton"] button {
-    width: 40px !important;
-    height: 40px !important;
-    min-height: 40px !important;
-    padding: 0 !important;
-    border-radius: 10px !important;
-    background: transparent !important;
-    border: 1px solid transparent !important;
-    color: #475569 !important;
-    font-size: 1.2rem !important;
-    transition: all 0.15s ease !important;
-    box-shadow: none !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div:first-child #rail-anchor) [data-testid="stButton"] button:hover {
-    background: rgba(59,130,246,0.12) !important;
-    border-color: rgba(59,130,246,0.25) !important;
-    color: #94a3b8 !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div:first-child #rail-anchor) [data-testid="stButton"] button:focus {
-    outline: none !important;
-    box-shadow: none !important;
-}
-
-/* Estado ativo: o slot anterior tem classe .active */
-div[data-testid="stVerticalBlock"]:has(> div:first-child #rail-anchor) .rail-slot.active + div [data-testid="stButton"] button,
-div[data-testid="stVerticalBlock"]:has(> div:first-child #rail-anchor) .rail-slot.active + [data-testid="stButton"] button {
-    background: rgba(59,130,246,0.18) !important;
-    border-color: rgba(59,130,246,0.4) !important;
-    color: #3b82f6 !important;
-}
-
-/* Espacador (empurra o botao de trocar arquivo pro final) */
-.rail-spacer { flex: 1; }
-
-/* Botao de trocar arquivo (ultimo, mais discreto) */
-.rail-slot-bottom + div [data-testid="stButton"] button,
-.rail-slot-bottom + [data-testid="stButton"] button {
-    opacity: 0.5 !important;
-    font-size: 1rem !important;
-}
-
-/* ── Overlay de loading na troca de pagina ── */
-#nav-loader {
-    position: fixed;
-    inset: 0;
-    background: rgba(8, 12, 20, 0.75);
-    backdrop-filter: blur(2px);
-    display: none;
-    align-items: center;
-    justify-content: center;
-    z-index: 999999;
-    pointer-events: none;
-}
-#nav-loader.show { display: flex; }
-#nav-loader .spinner {
-    width: 36px; height: 36px;
-    border: 3px solid rgba(99,102,241,0.2);
-    border-top-color: #6366f1;
-    border-radius: 50%;
-    animation: nav-spin 0.7s linear infinite;
-}
-@keyframes nav-spin {
-    to { transform: rotate(360deg); }
-}
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -717,30 +606,31 @@ PAGINAS_VALIDAS = [pid for pid, _, _ in NAV]
 pag = _pag_qp if _pag_qp in PAGINAS_VALIDAS else "visao_geral"
 st.session_state.pagina = pag
 
-# ── Nome do arquivo para preservar nos query params ──
+# ── Nome do arquivo (usado em outros pontos) ──
 _arq_nome = os.path.basename(st.session_state.arquivo_ativo) if st.session_state.arquivo_ativo else ""
 
-# ── Renderiza icon rail usando botoes Streamlit (mantem a sessao viva) ──
-# O CSS abaixo posiciona o container dos botoes fixo na lateral esquerda.
-with st.container():
-    st.markdown('<div id="rail-anchor"></div>', unsafe_allow_html=True)
-    # Logo
-    st.markdown('<div class="rail-logo-wrap"><div class="rail-logo">💎</div></div>', unsafe_allow_html=True)
-    # Botoes de navegacao
+# ── Sidebar nativa com navegacao via botoes Streamlit (mantem sessao viva) ──
+with st.sidebar:
+    st.markdown(
+        '<div style="text-align:center;font-size:1.8rem;margin:8px 0 24px;'
+        'filter:drop-shadow(0 0 12px rgba(59,130,246,.6))">💎 <span style="font-size:1rem;'
+        'font-family:Sora,sans-serif;font-weight:800;vertical-align:middle;'
+        'background:linear-gradient(135deg,#f1f5f9 0%,#3b82f6 50%,#6366f1 100%);'
+        '-webkit-background-clip:text;-webkit-text-fill-color:transparent">Financer</span></div>',
+        unsafe_allow_html=True
+    )
     for pid, icon, label in NAV:
         is_active = (pag == pid)
-        btn_key = f"nav_{pid}"
-        # Wrapper pra aplicar classe active via CSS
-        st.markdown(f'<div class="rail-slot {"active" if is_active else ""}" data-pid="{pid}"></div>', unsafe_allow_html=True)
-        if st.button(icon, key=btn_key, help=label, use_container_width=True):
+        btn_type = "primary" if is_active else "secondary"
+        if st.button(f"{icon}  {label}", key=f"nav_{pid}", use_container_width=True, type=btn_type):
             st.query_params["p"] = pid
             if _arq_nome:
                 st.query_params["arq"] = _arq_nome
             st.rerun()
-    # Espacador e botao de trocar arquivo
-    st.markdown('<div class="rail-spacer"></div>', unsafe_allow_html=True)
-    st.markdown('<div class="rail-slot rail-slot-bottom"></div>', unsafe_allow_html=True)
-    if st.button("↩", key="nav_trocar", help="Trocar arquivo", use_container_width=True):
+    st.markdown("<div style='flex:1;min-height:40px'></div>", unsafe_allow_html=True)
+    st.divider()
+    st.caption(f"📁 {_arq_nome}" if _arq_nome else "")
+    if st.button("↩  Trocar arquivo", key="nav_trocar", use_container_width=True):
         st.session_state.arquivo_ativo = None
         st.query_params.clear()
         st.rerun()
@@ -773,10 +663,6 @@ def cabecalho_pagina(titulo: str, subtitulo: str = ""):
             file_name=f"financer_{datetime.now().strftime('%Y%m%d')}.json",
             mime="application/json", use_container_width=True)
     st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
-
-# ── Sidebar oculta (não usada na navegação) ──
-with st.sidebar:
-    st.caption("Financer")
 
 # ════════════════════════════════════════════════════════════
 #  PÁGINA: VISÃO GERAL
