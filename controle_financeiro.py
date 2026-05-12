@@ -2,8 +2,9 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime
-import json, base64, os, anthropic, requests
+from datetime import datetime, timedelta
+import json, base64, os, anthropic, requests, hashlib
+import streamlit.components.v1 as components
 
 # ════════════════════════════════════════════════════════════
 #  CONFIGURAÇÃO DE STORAGE (GIST vs LOCAL)
@@ -173,7 +174,7 @@ def parc_auto(d):
 #  PAGE CONFIG
 # ════════════════════════════════════════════════════════════
 st.set_page_config(page_title="Financer", layout="wide", page_icon="💎",
-                   initial_sidebar_state="expanded")
+                   initial_sidebar_state="collapsed")
 
 # ════════════════════════════════════════════════════════════
 #  CSS GLOBAL
@@ -192,38 +193,49 @@ html, body { background: #080c14 !important; }
 [data-testid="stHeader"] { background: #080c14 !important; }
 [data-testid="stToolbar"] { display: none !important; }
 
+/* ── Sidebar toggle button (collapsed state) ── */
+[data-testid="stSidebarCollapsedControl"] {
+    background: #0c1120 !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    border-radius: 0 8px 8px 0 !important;
+    width: 2rem !important;
+    height: 2.5rem !important;
+    top: 50% !important;
+    position: fixed !important;
+    left: 0 !important;
+    z-index: 9999 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+}
+[data-testid="stSidebarCollapsedControl"]:hover {
+    background: rgba(59,130,246,0.15) !important;
+    border-color: rgba(59,130,246,0.4) !important;
+}
+[data-testid="stSidebarCollapsedControl"] svg {
+    color: #64748b !important;
+    width: 16px !important;
+    height: 16px !important;
+}
+/* Hide the expand/collapse button inside open sidebar (use our nav instead) */
+[data-testid="stSidebarCollapseButton"] button {
+    background: transparent !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    border-radius: 6px !important;
+    color: #475569 !important;
+}
 * { box-sizing: border-box; }
 
-/* ── Sidebar estreita e fixa (so emojis) ── */
+/* ── Sidebar ── */
 [data-testid="stSidebar"] {
     background: #0c1120 !important;
     border-right: 1px solid rgba(255,255,255,0.06) !important;
-    width: 72px !important;
-    min-width: 72px !important;
-    max-width: 72px !important;
+    width: 240px !important;
 }
-[data-testid="stSidebar"] > div:first-child {
-    width: 72px !important;
-    min-width: 72px !important;
-}
-/* Esconde botao de colapsar (sidebar fica sempre aberta) */
-[data-testid="stSidebarCollapseButton"],
-[data-testid="stSidebarCollapsedControl"] {
-    display: none !important;
-}
+[data-testid="stSidebar"] > div { padding: 0 !important; }
 [data-testid="stSidebarNavItems"] { display:none !important; }
 section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { margin:0; }
-/* Padding reduzido no conteudo da sidebar */
-section[data-testid="stSidebar"] > div > div:nth-child(2) {
-    padding: 12px 8px !important;
-}
-/* Botoes da sidebar: quadrados, so emoji */
-section[data-testid="stSidebar"] [data-testid="stButton"] button {
-    padding: 8px 0 !important;
-    min-height: 44px !important;
-    font-size: 1.3rem !important;
-    border-radius: 10px !important;
-}
 
 /* Sidebar buttons */
 [data-testid="stSidebar"] button[kind="secondary"] {
@@ -399,11 +411,66 @@ if "app_init" not in st.session_state:
 # ════════════════════════════════════════════════════════════
 #  TELA DE LOGIN (APENAS QUANDO HÁ SENHA CONFIGURADA)
 # ════════════════════════════════════════════════════════════
-# Autenticacao vive em st.session_state.autenticado, que persiste enquanto a
-# sessao Streamlit estiver ativa (mesma aba, sem F5). Trocar de pagina por
-# botao Streamlit (st.rerun) mantem a sessao. F5 ou nova aba = nova sessao = pede senha.
+def _gravar_auth_localstorage_js(value: str):
+    """Grava AUTH_TOKEN no localStorage do navegador (storage da pagina pai)."""
+    components.html(
+        f"""
+        <script>
+          try {{
+            window.parent.localStorage.setItem("financer_auth", "{value}");
+          }} catch (e) {{
+            localStorage.setItem("financer_auth", "{value}");
+          }}
+        </script>
+        """,
+        height=0,
+    )
+
+def _checar_localstorage_js():
+    """Le localStorage e injeta o token na URL via history.replaceState (sem reload).
+    O Streamlit re-le query_params naturalmente."""
+    components.html(
+        """
+        <script>
+          (function() {
+            let storage;
+            try { storage = window.parent.localStorage; }
+            catch (e) { storage = localStorage; }
+            const token = storage.getItem("financer_auth");
+            if (!token) return;
+            let loc;
+            try { loc = window.parent.location; }
+            catch (e) { loc = window.location; }
+            const url = new URL(loc.href);
+            if (url.searchParams.get("auth") === token) return;
+            url.searchParams.set("auth", token);
+            try {
+              window.parent.history.replaceState({}, "", url.toString());
+              window.parent.location.reload();
+            } catch (e) {
+              window.location.href = url.toString();
+            }
+          })();
+        </script>
+        """,
+        height=0,
+    )
 
 if APP_PASSWORD:
+    # Hash da senha + um "tempero" fixo. Se alguem souber a senha, gera o hash;
+    # sem saber a senha, nao consegue forjar.
+    AUTH_TOKEN = hashlib.sha256(f"financer-auth::{APP_PASSWORD}".encode()).hexdigest()
+
+    # Le token do query param (que o JS coloca a partir do sessionStorage).
+    auth_qp = st.query_params.get("auth", "")
+    if auth_qp == AUTH_TOKEN:
+        st.session_state.autenticado = True
+
+    # Se ainda nao esta autenticado, tenta puxar do sessionStorage via JS.
+    # O JS recarrega a pagina com ?auth=<token> e o Python autentica na proxima execucao.
+    if not st.session_state.get("autenticado"):
+        _checar_localstorage_js()
+
     if not st.session_state.get("autenticado"):
         st.markdown("""
         <style>
@@ -432,6 +499,9 @@ if APP_PASSWORD:
                 pwd = st.text_input("Senha", type="password", label_visibility="collapsed", placeholder="Senha")
                 if st.form_submit_button("Entrar", type="primary", use_container_width=True):
                     if pwd == APP_PASSWORD:
+                        # Grava token no sessionStorage (vale pra futuras sessoes/abas/F5).
+                        _gravar_auth_localstorage_js(AUTH_TOKEN)
+                        # Autentica a sessao ATUAL via session_state e segue.
                         st.session_state.autenticado = True
                         st.rerun()
                     else:
@@ -575,17 +645,119 @@ NAV = [
 if "mesAtivo" not in st.session_state:
     st.session_state.mesAtivo = MES_ATUAL
 
-# ── CSS: ajustes da sidebar nativa e padding do conteudo ──
+# ── CSS: esconde sidebar nativa, injeta icon rail fixo ──
 st.markdown("""
 <style>
+[data-testid="stSidebar"],
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="collapsedControl"],
+button[data-testid="stBaseButton-headerNoPadding"] {
+    display: none !important;
+}
 [data-testid="stHeader"] {
     display: none !important;
 }
 [data-testid="stMainBlockContainer"] {
+    padding-left: 72px !important;
     padding-top: 24px !important;
     padding-right: 28px !important;
-    padding-left: 28px !important;
 }
+/* Icon rail */
+.icon-rail {
+    position: fixed;
+    left: 0; top: 0; bottom: 0;
+    width: 56px;
+    background: #0c1120;
+    border-right: 1px solid rgba(255,255,255,0.07);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px 0;
+    gap: 4px;
+    z-index: 9999;
+}
+.rail-logo {
+    font-size: 1.3rem;
+    margin-bottom: 16px;
+    filter: drop-shadow(0 0 8px rgba(59,130,246,.6));
+    cursor: default;
+}
+.rail-btn {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.1rem;
+    cursor: pointer;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #475569;
+    position: relative;
+    transition: all 0.15s ease;
+    text-decoration: none;
+}
+.rail-btn:hover {
+    background: rgba(59,130,246,0.12);
+    border-color: rgba(59,130,246,0.25);
+    color: #94a3b8;
+}
+.rail-btn.active {
+    background: rgba(59,130,246,0.18);
+    border-color: rgba(59,130,246,0.4);
+    color: #3b82f6;
+}
+.rail-btn .tip {
+    position: absolute;
+    left: 50px;
+    background: #1e293b;
+    color: #e2e8f0;
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+    padding: 5px 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.1);
+    pointer-events: none;
+    opacity: 0;
+    transform: translateX(-4px);
+    transition: all 0.15s ease;
+    font-family: Inter, sans-serif;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    z-index: 99999;
+}
+.rail-btn:hover .tip {
+    opacity: 1;
+    transform: translateX(0);
+}
+.rail-divider {
+    width: 28px; height: 1px;
+    background: rgba(255,255,255,0.07);
+    margin: 6px 0;
+}
+
+/* ── Overlay de loading na troca de pagina ── */
+#nav-loader {
+    position: fixed;
+    inset: 0;
+    background: rgba(8, 12, 20, 0.75);
+    backdrop-filter: blur(2px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 999999;
+    pointer-events: none;
+}
+#nav-loader.show { display: flex; }
+#nav-loader .spinner {
+    width: 36px; height: 36px;
+    border: 3px solid rgba(99,102,241,0.2);
+    border-top-color: #6366f1;
+    border-radius: 50%;
+    animation: nav-spin 0.7s linear infinite;
+}
+@keyframes nav-spin {
+    to { transform: rotate(360deg); }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -595,30 +767,39 @@ PAGINAS_VALIDAS = [pid for pid, _, _ in NAV]
 pag = _pag_qp if _pag_qp in PAGINAS_VALIDAS else "visao_geral"
 st.session_state.pagina = pag
 
-# ── Nome do arquivo (usado em outros pontos) ──
+# ── Nome do arquivo para preservar nos links ──
 _arq_nome = os.path.basename(st.session_state.arquivo_ativo) if st.session_state.arquivo_ativo else ""
 
-# ── Sidebar nativa com navegacao via botoes Streamlit (mantem sessao viva) ──
-with st.sidebar:
-    st.markdown(
-        '<div style="text-align:center;font-size:1.5rem;margin:4px 0 20px;'
-        'filter:drop-shadow(0 0 12px rgba(59,130,246,.6))">💎</div>',
-        unsafe_allow_html=True
-    )
-    for pid, icon, label in NAV:
-        is_active = (pag == pid)
-        btn_type = "primary" if is_active else "secondary"
-        if st.button(icon, key=f"nav_{pid}", help=label, use_container_width=True, type=btn_type):
-            st.query_params["p"] = pid
-            if _arq_nome:
-                st.query_params["arq"] = _arq_nome
-            st.rerun()
-    st.markdown("<div style='flex:1;min-height:40px'></div>", unsafe_allow_html=True)
-    st.divider()
-    if st.button("↩", key="nav_trocar", help="Trocar arquivo", use_container_width=True):
-        st.session_state.arquivo_ativo = None
-        st.query_params.clear()
-        st.rerun()
+# ── Renderiza icon rail com links que preservam ?arq= ──
+nav_html = '<div class="icon-rail"><div class="rail-logo">💎</div>'
+for pid, icon, label in NAV:
+    active_cls = "active" if pag == pid else ""
+    nav_html += f'<a class="rail-btn {active_cls}" data-nav href="?p={pid}&arq={_arq_nome}" target="_self"><span style="font-size:1.2rem">{icon}</span><span class="tip">{label}</span></a>'
+nav_html += '<div style="flex:1"></div>'
+nav_html += f'<a class="rail-btn" data-nav href="?arq=" target="_self" style="font-size:1rem;opacity:.5;" title="Trocar arquivo">↩<span class="tip">Trocar arquivo</span></a>'
+nav_html += '</div>'
+
+# Overlay de loading + JS que ativa ao clicar em qualquer link de navegacao
+nav_html += """
+<div id="nav-loader"><div class="spinner"></div></div>
+<script>
+(function() {
+  const overlay = document.getElementById("nav-loader");
+  document.querySelectorAll("a.rail-btn[data-nav]").forEach(a => {
+    a.addEventListener("click", () => {
+      if (overlay) overlay.classList.add("show");
+    });
+  });
+})();
+</script>
+"""
+st.markdown(nav_html, unsafe_allow_html=True)
+
+# ── Handle "trocar arquivo" ──
+if st.query_params.get("arq") == "":
+    st.session_state.arquivo_ativo = None
+    st.query_params.clear()
+    st.rerun()
 
 # ── Dados pra exportação (usados pelo cabecalho_pagina) ──
 dados_exp = {k: st.session_state[k] for k in
@@ -648,6 +829,10 @@ def cabecalho_pagina(titulo: str, subtitulo: str = ""):
             file_name=f"financer_{datetime.now().strftime('%Y%m%d')}.json",
             mime="application/json", use_container_width=True)
     st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+
+# ── Sidebar oculta (não usada na navegação) ──
+with st.sidebar:
+    st.caption("Financer")
 
 # ════════════════════════════════════════════════════════════
 #  PÁGINA: VISÃO GERAL
