@@ -770,11 +770,15 @@ st.session_state.pagina = pag
 # ── Nome do arquivo para preservar nos links ──
 _arq_nome = os.path.basename(st.session_state.arquivo_ativo) if st.session_state.arquivo_ativo else ""
 
-# ── Renderiza icon rail com links que preservam ?arq= ──
+# ── Token de auth pra propagar nos links (mantem sessao autenticada na navegacao) ──
+_auth_url = st.query_params.get("auth", "")
+_auth_qs = f"&auth={_auth_url}" if _auth_url else ""
+
+# ── Renderiza icon rail com links que preservam ?arq= e ?auth= ──
 nav_html = '<div class="icon-rail"><div class="rail-logo">💎</div>'
 for pid, icon, label in NAV:
     active_cls = "active" if pag == pid else ""
-    nav_html += f'<a class="rail-btn {active_cls}" data-nav href="?p={pid}&arq={_arq_nome}" target="_self"><span style="font-size:1.2rem">{icon}</span><span class="tip">{label}</span></a>'
+    nav_html += f'<a class="rail-btn {active_cls}" data-nav href="?p={pid}&arq={_arq_nome}{_auth_qs}" target="_self"><span style="font-size:1.2rem">{icon}</span><span class="tip">{label}</span></a>'
 nav_html += '<div style="flex:1"></div>'
 nav_html += f'<a class="rail-btn" data-nav href="?arq=" target="_self" style="font-size:1rem;opacity:.5;" title="Trocar arquivo">↩<span class="tip">Trocar arquivo</span></a>'
 nav_html += '</div>'
